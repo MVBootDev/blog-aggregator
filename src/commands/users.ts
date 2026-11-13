@@ -1,38 +1,22 @@
-import { readConfig, setUser } from "../config.js";
-import { createUser, deleteAllUsers, getUser, getUsers } from "../lib/db/queries/users.js";
+import { Effect } from "effect";
+import { CommandError } from "../errors.js";
+import { listUsers, reset, selectUser } from "../application/users.js";
 
-export type CommandHandler = (cmdName: string, ...args: string[]) => Promise<void>;
-
-export async function handlerLogin(_cmdName: string, ...args: string[]): Promise<void> {
-  const [name] = args;
-  if (!name) throw new Error("The login command requires a username");
-
-  const user = await getUser(name);
-  if (!user) throw new Error(`User ${name} does not exist`);
-
-  setUser(user.name);
-  console.log(`Logged in as ${user.name}`);
-}
-
-export async function handlerRegister(_cmdName: string, ...args: string[]): Promise<void> {
-  const [name] = args;
-  if (!name) throw new Error("The register command requires a username");
-
-  const user = await createUser(name);
-  setUser(user.name);
-  console.log(`User ${user.name} created successfully`);
-}
-
-export async function handlerReset(_cmdName: string): Promise<void> {
-  await deleteAllUsers();
-  console.log("Database reset successfully");
-}
-
-export async function handlerUsers(_cmdName: string): Promise<void> {
-  const config = readConfig();
-  const users = await getUsers();
-  for (const user of users) {
-    const current = user.name === config.currentUserName ? " (current)" : "";
-    console.log(`* ${user.name}${current}`);
-  }
+export function userCommand(command: string, ...args: string[]) {
+  return Effect.gen(function* () {
+    if (command === "login" || command === "register") {
+      const name = args[0];
+      if (!name) return yield* Effect.fail(new CommandError(`The ${command} command requires a username`));
+      const user = yield* selectUser(name, command === "register");
+      console.log(command === "register" ? `User ${user.name} created successfully` : `Logged in as ${user.name}`);
+      return;
+    }
+    if (command === "reset") {
+      yield* reset;
+      console.log("Database reset successfully");
+      return;
+    }
+    const { records, currentUserName } = yield* listUsers;
+    for (const user of records) console.log(`* ${user.name}${user.name === currentUserName ? " (current)" : ""}`);
+  });
 }

@@ -1,58 +1,39 @@
-import { handlerLogin, handlerRegister, handlerReset, handlerUsers, type CommandHandler } from "./commands/users.js";
-import { handlerAgg } from "./commands/agg.js";
-import { handlerAddFeed, handlerBrowse, handlerFeeds, handlerFollow, handlerFollowing, handlerUnfollow } from "./commands/feeds.js";
-import { middlewareLoggedIn } from "./commands/middleware.js";
+import { CommandError } from "./errors.js";
+import { Effect, Layer } from "effect";
+import { FeedReaderLive } from "./rss/service.js";
+import { AppConfigLive } from "./config-service.js";
+import { DatabaseLive } from "./lib/db/service.js";
+import { userCommand } from "./commands/users.js";
+import { feedCommand } from "./commands/feeds.js";
+import { aggregate } from "./commands/agg.js";
 
-type CommandsRegistry = Record<string, CommandHandler>;
+const [command, ...args] = process.argv.slice(2);
+const userCommands = ["login", "register", "reset", "users"];
+const feedCommands = ["addfeed", "feeds", "follow", "following", "unfollow", "browse", "retryfeed"];
+const controller = new AbortController();
+const shutdown = () => {
+  console.log("Shutting down feed aggregator...");
+  controller.abort();
+};
+if (command === "agg") process.once("SIGINT", shutdown);
 
-function registerCommand(
-  registry: CommandsRegistry,
-  cmdName: string,
-  handler: CommandHandler,
-): void {
-  registry[cmdName] = handler;
-}
-
-async function runCommand(
-  registry: CommandsRegistry,
-  cmdName: string,
-  ...args: string[]
-): Promise<void> {
-  const handler = registry[cmdName];
-  if (!handler) {
-    throw new Error(`Unknown command: ${cmdName}`);
-  }
-  await handler(cmdName, ...args);
-}
-
-async function main(): Promise<void> {
-  const registry: CommandsRegistry = {};
-  registerCommand(registry, "login", handlerLogin);
-  registerCommand(registry, "register", handlerRegister);
-  registerCommand(registry, "reset", handlerReset);
-  registerCommand(registry, "users", handlerUsers);
-  registerCommand(registry, "agg", handlerAgg);
-  registerCommand(registry, "addfeed", middlewareLoggedIn(handlerAddFeed));
-  registerCommand(registry, "feeds", handlerFeeds);
-  registerCommand(registry, "follow", middlewareLoggedIn(handlerFollow));
-  registerCommand(registry, "following", middlewareLoggedIn(handlerFollowing));
-  registerCommand(registry, "unfollow", middlewareLoggedIn(handlerUnfollow));
-  registerCommand(registry, "browse", middlewareLoggedIn(handlerBrowse));
-
-  const args = process.argv.slice(2);
-  if (args.length === 0) {
-    console.error("Error: not enough arguments provided");
-    process.exit(1);
-  }
-
-  const [cmdName, ...commandArgs] = args;
-  try {
-    await runCommand(registry, cmdName, ...commandArgs);
-    process.exit(0);
-  } catch (error) {
+try {
+  const appLive = Layer.merge(Layer.provideMerge(DatabaseLive, AppConfigLive), FeedReaderLive);
+  const program = !command
+    ? Effect.fail(new CommandError("not enough arguments provided"))
+    : userCommands.includes(command)
+      ? userCommand(command, ...args).pipe(Effect.provide(appLive))
+      : feedCommands.includes(command)
+        ? feedCommand(command, ...args).pipe(Effect.provide(appLive))
+        : command === "agg"
+          ? aggregate(args[0]).pipe(Effect.provide(appLive))
+          : Effect.fail(new CommandError(`Unknown command: ${command}`));
+  await Effect.runPromise(program, { signal: controller.signal });
+} catch (error) {
+  if (!controller.signal.aborted) {
     console.error(error instanceof Error ? `Error: ${error.message}` : error);
-    process.exit(1);
+    process.exitCode = 1;
   }
+} finally {
+  if (command === "agg") process.off("SIGINT", shutdown);
 }
-
-await main();

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom().notNull(),
@@ -21,6 +21,11 @@ export const feeds = pgTable("feeds", {
   url: text("url").notNull().unique(),
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   lastFetchedAt: timestamp("last_fetched_at"),
+  lastAttemptAt: timestamp("last_attempt_at"),
+  consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+  lastError: text("last_error"),
+  nextAttemptAt: timestamp("next_attempt_at"),
+  needsAttention: boolean("needs_attention").notNull().default(false),
 });
 
 export const feedFollows = pgTable("feed_follows", {

@@ -23,8 +23,8 @@ function requiredString(value: unknown, field: string): string {
   return value;
 }
 
-export async function fetchFeed(feedURL: string): Promise<RSSFeed> {
-  const response = await fetch(feedURL, { headers: { "User-Agent": "gator" } });
+export async function fetchFeed(feedURL: string, signal?: AbortSignal): Promise<RSSFeed> {
+  const response = await fetch(feedURL, { headers: { "User-Agent": "gator" }, signal });
   if (!response.ok) throw new Error(`Failed to fetch feed: ${response.status}`);
 
   const parser = new XMLParser({ processEntities: false });

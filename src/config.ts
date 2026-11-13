@@ -8,7 +8,7 @@ export type Config = {
 };
 
 function getConfigFilePath(): string {
-  return path.join(os.homedir(), ".gatorconfig.json");
+  return process.env.GATOR_CONFIG_PATH || path.join(os.homedir(), ".gatorconfig.json");
 }
 
 function writeConfig(cfg: Config): void {
